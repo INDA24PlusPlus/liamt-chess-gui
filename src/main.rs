@@ -2,19 +2,21 @@ use arvidkr_chess::*;
 use ggez::event::{self, EventHandler, MouseButton};
 use ggez::graphics::{self};
 use ggez::{glam::*, Context, ContextBuilder, GameResult};
+use std::borrow::Borrow;
 use std::path;
 use std::str::FromStr;
 
 const TILE_SIZE: i32 = 100;
 const OFFSET: f32 = 100.0;
 
-/* #[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Color {
     White,
     Black,
+    None,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+/* #[derive(Clone, Copy, Debug, PartialEq)]
 enum Piece {
     Pawn(Color),
     Rook(Color),
@@ -32,6 +34,7 @@ fn main() {
     let (mut ctx, event_loop) = ContextBuilder::new("chess", "Laim")
         .add_resource_path(resource_dir)
         .window_mode(mode)
+        .window_setup(ggez::conf::WindowSetup::default().title("ULTIMEATE CHESS GAME!!?1"))
         .build()
         .expect("gg, could not create ggez context :(");
 
@@ -58,18 +61,18 @@ fn load_piece_images(ctx: &Context) -> Vec<(String, graphics::Image)> {
     ]; */
 
     let pieces = vec![
-        ("P", "/wP.png"),
-        ("R", "/wR.png"),
-        ("N", "/wN.png"),
-        ("B", "/wB.png"),
-        ("Q", "/wQ.png"),
-        ("K", "/wK.png"),
-        ("p", "/bP.png"),
-        ("r", "/bR.png"),
-        ("n", "/bN.png"),
-        ("b", "/bB.png"),
-        ("q", "/bQ.png"),
-        ("k", "/bK.png"),
+        ("p", "/wP.png"),
+        ("r", "/wR.png"),
+        ("n", "/wN.png"),
+        ("b", "/wB.png"),
+        ("q", "/wQ.png"),
+        ("k", "/wK.png"),
+        ("P", "/bP.png"),
+        ("R", "/bR.png"),
+        ("N", "/bN.png"),
+        ("B", "/bB.png"),
+        ("Q", "/bQ.png"),
+        ("K", "/bK.png"),
     ];
 
     let mut piece_images = Vec::new();
@@ -82,6 +85,71 @@ fn load_piece_images(ctx: &Context) -> Vec<(String, graphics::Image)> {
     piece_images
 }
 
+fn str_to_idx(s: &str) -> usize {
+    let s = s.to_lowercase();
+    let x = s.chars().nth(0).unwrap() as usize - 'a' as usize;
+    let y = s.chars().nth(1).unwrap() as usize - '1' as usize;
+    return (7 - y) * 8 + x;
+}
+
+fn idx_to_str(idx: usize) -> String {
+    /* let x = (x as u8 + b'a') as char;
+    let y = (y as u8 + b'1') as char;
+    format!("{}{}", x, y) */
+    let x = idx % 8;
+    let y = (7 - idx / 8);
+    let x = (x as u8 + b'a') as char;
+    let y = (y as u8 + b'1') as char;
+    format!("{}{}", x, y)
+}
+
+fn generate_valid_moves(board: &mut Board) -> [Vec<usize>; 64] {
+    const ARRAY_REPEAT_VALUE: Vec<usize> = Vec::new();
+    let mut valid_moves = [ARRAY_REPEAT_VALUE; 64];
+
+    let moves = filtered_moves(board);
+
+    for m in moves.iter() {
+        let idx = str_to_idx(&m[0..2]);
+        valid_moves[idx].push(str_to_idx(&m[2..4]));
+    }
+
+    valid_moves
+}
+
+fn get_piece_color(piece: char) -> Color {
+    if piece == '.' {
+        return Color::None;
+    } else if piece.is_uppercase() {
+        return Color::Black;
+    } else if piece.is_lowercase() {
+        return Color::White;
+    } else {
+        return Color::None;
+    }
+}
+
+fn move_piece(board: &mut Board, from: usize, to: usize) {
+    let from = idx_to_str(from);
+    let to = idx_to_str(to);
+
+    let movi = format!("{}{}", from, to);
+
+    println!("Move: {}", movi);
+
+    make_move(board, movi);
+}
+
+fn invert_boardstr(boardstr: String) -> String {
+    //reverse every 8 characters
+    let mut new_boardstr = String::new();
+    for i in (0..64).rev().step_by(8) {
+        let row = &boardstr[i - 7..i + 1];
+        new_boardstr.push_str(row);
+    }
+    new_boardstr
+}
+
 struct Chess {
     piece_images: Vec<(String, graphics::Image)>,
     grid: graphics::Mesh,
@@ -90,6 +158,8 @@ struct Chess {
     selected_piece: Option<usize>,
     dragging: bool,
     mouse_pos: (f32, f32),
+    valid_moves: [Vec<usize>; 64],
+    turn: Color,
 }
 
 impl Chess {
@@ -125,10 +195,9 @@ impl Chess {
         let mut board = Board::new();
         board.init_board();
 
-        println!("{:?}", board.get_board());
-
         let board_str = (board.get_boardinfo()[7..71]).to_string();
 
+        const ARRAY_REPEAT_VALUE: Vec<usize> = Vec::new();
         Chess {
             piece_images: load_piece_images(ctx),
             grid,
@@ -137,48 +206,81 @@ impl Chess {
             selected_piece: None,
             dragging: false,
             mouse_pos: (0.0, 0.0),
+            valid_moves: [ARRAY_REPEAT_VALUE; 64],
+            turn: Color::White,
         }
     }
 }
 
 impl EventHandler<ggez::GameError> for Chess {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
-        self.board_str = (self.board.get_boardinfo()[7..71]).to_string();
+        let info = self.board.get_boardinfo();
+        self.turn = if &info[2..3] == "W" {
+            Color::White
+        } else {
+            Color::Black
+        };
+        self.board_str = invert_boardstr((info[7..71]).to_string());
+        self.valid_moves = generate_valid_moves(&mut self.board);
 
         Ok(())
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::BLACK);
+        let selected_piece_idx = self.selected_piece.unwrap_or(69); // nice
 
+        // START DRAW GRID
         let dst = Vec2::new(100.0, 100.0);
         canvas.draw(&self.grid, graphics::DrawParam::new().dest(dst));
 
+        // LOOP THROUGH BOARD STRING AND DRAW PIECES
         for (i, c) in self.board_str.chars().enumerate() {
+            // START CALCULATE POSITION
             let x = (i % 8) as f32 * TILE_SIZE as f32 + OFFSET;
             let y = (i / 8) as f32 * TILE_SIZE as f32 + OFFSET;
 
             let mut piece_dst = Vec2::new(x, y);
 
-            if let Some(piece_idx) = self.selected_piece {
-                if piece_idx == i {
-                    canvas.draw(
-                        &graphics::Mesh::new_rectangle(
-                            ctx,
-                            graphics::DrawMode::stroke(5.0),
-                            graphics::Rect::new(x, y, TILE_SIZE as f32, TILE_SIZE as f32),
-                            graphics::Color::from_rgb(255, 0, 0),
-                        )
-                        .unwrap(),
-                        graphics::DrawParam::new(),
-                    );
+            if selected_piece_idx != 69 && self.valid_moves[selected_piece_idx].contains(&i) {
+                canvas.draw(
+                    &graphics::Mesh::new_circle(
+                        ctx,
+                        graphics::DrawMode::fill(),
+                        Vec2::new(x + TILE_SIZE as f32 / 2.0, y + TILE_SIZE as f32 / 2.0),
+                        10.0,
+                        0.1,
+                        graphics::Color::from_rgba(199, 38, 239, 100),
+                    )
+                    .unwrap(),
+                    graphics::DrawParam::new(),
+                );
+            }
 
-                    if self.dragging {
-                        piece_dst = Vec2::new(self.mouse_pos.0 - 50.0, self.mouse_pos.1 - 50.0);
-                    }
+            // START HANDLE SELECTED PIECE
+            if selected_piece_idx == i {
+                // DRAW SELECTION BORDER AROUND PIECE
+                canvas.draw(
+                    &graphics::Mesh::new_rectangle(
+                        ctx,
+                        graphics::DrawMode::stroke(5.0),
+                        graphics::Rect::new(x, y, TILE_SIZE as f32, TILE_SIZE as f32),
+                        graphics::Color::from_rgba(199, 38, 239, 255),
+                    )
+                    .unwrap(),
+                    graphics::DrawParam::new(),
+                );
+
+                // IF DRAGGING, MOVE PIECE TO MOUSE POSITION
+                if self.dragging {
+                    piece_dst = Vec2::new(
+                        self.mouse_pos.0 - (TILE_SIZE as f32 / 2.0),
+                        self.mouse_pos.1 - (TILE_SIZE as f32 / 2.0),
+                    );
                 }
             }
 
+            // START DRAW PIECE
             let img = &self
                 .piece_images
                 .iter()
@@ -208,9 +310,21 @@ impl EventHandler<ggez::GameError> for Chess {
 
         if let Some(piece) = piece {
             println!("Piece: {}", piece);
-            self.selected_piece = Some(idx);
-            self.dragging = true;
-            self.mouse_pos = (x, y);
+            let color = get_piece_color(piece);
+            if color == self.turn {
+                self.selected_piece = Some(idx);
+                self.dragging = true;
+                self.mouse_pos = (x, y);
+            } else if self.selected_piece.is_some()
+                && self.valid_moves[self.selected_piece.unwrap()].contains(&idx)
+            {
+                println!("Move piece VALID!");
+                move_piece(&mut self.board, self.selected_piece.unwrap(), idx);
+                println!("{:?}", self.board.get_boardinfo());
+                self.selected_piece = None;
+            } else {
+                self.selected_piece = None;
+            }
         }
 
         Ok(())
