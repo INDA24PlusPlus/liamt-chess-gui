@@ -1,11 +1,12 @@
 use arvidkr_chess::*;
-use ggez::event::{self, EventHandler};
+use ggez::event::{self, EventHandler, MouseButton};
 use ggez::graphics::{self};
 use ggez::{glam::*, Context, ContextBuilder, GameResult};
 use std::path;
 use std::str::FromStr;
 
 const TILE_SIZE: i32 = 100;
+const OFFSET: f32 = 100.0;
 
 /* #[derive(Clone, Copy, Debug, PartialEq)]
 enum Color {
@@ -85,7 +86,10 @@ struct Chess {
     piece_images: Vec<(String, graphics::Image)>,
     grid: graphics::Mesh,
     board: Board,
-    // Your state here...
+    board_str: String,
+    selected_piece: Option<usize>,
+    dragging: bool,
+    mouse_pos: (f32, f32),
 }
 
 impl Chess {
@@ -99,7 +103,8 @@ impl Chess {
         for row in 0..8 {
             for col in 0..8 {
                 let tile_color = if (row + col) % 2 == 0 {
-                    graphics::Color::from_rgb(237, 14, 118)
+                    graphics::Color::from_rgb(255, 255, 255)
+                    //graphics::Color::from_rgb(237, 14, 118)
                 } else {
                     graphics::Color::from_rgb(0, 0, 0)
                 };
@@ -122,17 +127,24 @@ impl Chess {
 
         println!("{:?}", board.get_board());
 
+        let board_str = (board.get_boardinfo()[7..71]).to_string();
+
         Chess {
             piece_images: load_piece_images(ctx),
             grid,
             board,
-            // ...
+            board_str,
+            selected_piece: None,
+            dragging: false,
+            mouse_pos: (0.0, 0.0),
         }
     }
 }
 
-impl EventHandler for Chess {
+impl EventHandler<ggez::GameError> for Chess {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
+        self.board_str = (self.board.get_boardinfo()[7..71]).to_string();
+
         Ok(())
     }
 
@@ -142,23 +154,96 @@ impl EventHandler for Chess {
         let dst = Vec2::new(100.0, 100.0);
         canvas.draw(&self.grid, graphics::DrawParam::new().dest(dst));
 
-        let board_str = &self.board.get_boardinfo()[7..71];
+        for (i, c) in self.board_str.chars().enumerate() {
+            let x = (i % 8) as f32 * TILE_SIZE as f32 + OFFSET;
+            let y = (i / 8) as f32 * TILE_SIZE as f32 + OFFSET;
 
-        for (i, char) in board_str.chars().enumerate() {
-            let x = (i % 8) as f32 * TILE_SIZE as f32 + 100.0;
-            let y = (i / 8) as f32 * TILE_SIZE as f32 + 100.0;
+            let mut piece_dst = Vec2::new(x, y);
+
+            if let Some(piece_idx) = self.selected_piece {
+                if piece_idx == i {
+                    canvas.draw(
+                        &graphics::Mesh::new_rectangle(
+                            ctx,
+                            graphics::DrawMode::stroke(5.0),
+                            graphics::Rect::new(x, y, TILE_SIZE as f32, TILE_SIZE as f32),
+                            graphics::Color::from_rgb(255, 0, 0),
+                        )
+                        .unwrap(),
+                        graphics::DrawParam::new(),
+                    );
+
+                    if self.dragging {
+                        piece_dst = Vec2::new(self.mouse_pos.0 - 50.0, self.mouse_pos.1 - 50.0);
+                    }
+                }
+            }
 
             let img = &self
                 .piece_images
                 .iter()
-                .find(|(piece, _)| piece == &char.to_string());
+                .find(|(piece, _)| piece == &c.to_string());
 
             if let Some((_, img)) = img {
-                let dst = Vec2::new(x, y);
-                canvas.draw(img, graphics::DrawParam::new().dest(dst));
+                canvas.draw(img, graphics::DrawParam::new().dest(piece_dst));
             }
         }
 
         canvas.finish(ctx)
+    }
+
+    fn mouse_button_down_event(
+        &mut self,
+        _ctx: &mut Context,
+        button: MouseButton,
+        x: f32,
+        y: f32,
+    ) -> GameResult {
+        let x2 = (x - OFFSET) as i32 / TILE_SIZE;
+        let y2 = (y - OFFSET) as i32 / TILE_SIZE;
+
+        let idx = y2 as usize * 8 + x2 as usize;
+
+        let piece = self.board_str.chars().nth(idx);
+
+        if let Some(piece) = piece {
+            println!("Piece: {}", piece);
+            self.selected_piece = Some(idx);
+            self.dragging = true;
+            self.mouse_pos = (x, y);
+        }
+
+        Ok(())
+    }
+
+    fn mouse_button_up_event(
+        &mut self,
+        _ctx: &mut Context,
+        button: MouseButton,
+        x: f32,
+        y: f32,
+    ) -> GameResult {
+        let x = (x - OFFSET) as i32 / TILE_SIZE;
+        let y = (y - OFFSET) as i32 / TILE_SIZE;
+
+        let idx = y as usize * 8 + x as usize;
+
+        self.dragging = false;
+
+        Ok(())
+    }
+
+    fn mouse_motion_event(
+        &mut self,
+        _ctx: &mut Context,
+        x: f32,
+        y: f32,
+        _dx: f32,
+        _dy: f32,
+    ) -> GameResult {
+        if self.dragging && self.selected_piece.is_some() {
+            self.mouse_pos = (x, y);
+        }
+        Ok(())
     }
 }
