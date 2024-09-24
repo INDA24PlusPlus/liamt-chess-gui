@@ -2,7 +2,6 @@ use arvidkr_chess::*;
 use ggez::event::{self, EventHandler, MouseButton};
 use ggez::graphics::{self};
 use ggez::{glam::*, Context, ContextBuilder, GameResult};
-use std::borrow::Borrow;
 use std::path;
 use std::str::FromStr;
 
@@ -87,9 +86,9 @@ fn load_piece_images(ctx: &Context) -> Vec<(String, graphics::Image)> {
 
 fn str_to_idx(s: &str) -> usize {
     let s = s.to_lowercase();
-    let x = s.chars().nth(0).unwrap() as usize - 'a' as usize;
+    let x = s.chars().next().unwrap() as usize - 'a' as usize;
     let y = s.chars().nth(1).unwrap() as usize - '1' as usize;
-    return (7 - y) * 8 + x;
+    (7 - y) * 8 + x
 }
 
 fn idx_to_str(idx: usize) -> String {
@@ -97,7 +96,7 @@ fn idx_to_str(idx: usize) -> String {
     let y = (y as u8 + b'1') as char;
     format!("{}{}", x, y) */
     let x = idx % 8;
-    let y = (7 - idx / 8);
+    let y = 7 - idx / 8;
     let x = (x as u8 + b'a') as char;
     let y = (y as u8 + b'1') as char;
     format!("{}{}", x, y)
@@ -118,14 +117,10 @@ fn generate_valid_moves(board: &mut Board) -> [Vec<usize>; 64] {
 }
 
 fn get_piece_color(piece: char) -> Color {
-    if piece == '.' {
-        return Color::None;
-    } else if piece.is_uppercase() {
-        return Color::Black;
-    } else if piece.is_lowercase() {
-        return Color::White;
-    } else {
-        return Color::None;
+    match piece {
+        'p' | 'r' | 'n' | 'b' | 'q' | 'k' => Color::White,
+        'P' | 'R' | 'N' | 'B' | 'Q' | 'K' => Color::Black,
+        _ => Color::None,
     }
 }
 
@@ -297,20 +292,22 @@ impl EventHandler<ggez::GameError> for Chess {
     fn mouse_button_down_event(
         &mut self,
         _ctx: &mut Context,
-        button: MouseButton,
+        _button: MouseButton,
         x: f32,
         y: f32,
     ) -> GameResult {
         let x2 = (x - OFFSET) as i32 / TILE_SIZE;
         let y2 = (y - OFFSET) as i32 / TILE_SIZE;
-
         let idx = y2 as usize * 8 + x2 as usize;
 
+        // GET PIECE AT MOUSE POSITION
         let piece = self.board_str.chars().nth(idx);
 
+        // IF PIECE EXISTS
         if let Some(piece) = piece {
-            println!("Piece: {}", piece);
             let color = get_piece_color(piece);
+
+            // IF PIECE IS SAME COLOR AS TURN, SELECT PIECE
             if color == self.turn {
                 self.selected_piece = Some(idx);
                 self.dragging = true;
@@ -318,11 +315,11 @@ impl EventHandler<ggez::GameError> for Chess {
             } else if self.selected_piece.is_some()
                 && self.valid_moves[self.selected_piece.unwrap()].contains(&idx)
             {
-                println!("Move piece VALID!");
+                // IF PIECE IS SELECTED AND POSITION IS VALID, MOVE PIECE
                 move_piece(&mut self.board, self.selected_piece.unwrap(), idx);
-                println!("{:?}", self.board.get_boardinfo());
                 self.selected_piece = None;
             } else {
+                // ELSE UNSELECT PIECE
                 self.selected_piece = None;
             }
         }
@@ -333,14 +330,28 @@ impl EventHandler<ggez::GameError> for Chess {
     fn mouse_button_up_event(
         &mut self,
         _ctx: &mut Context,
-        button: MouseButton,
+        _button: MouseButton,
         x: f32,
         y: f32,
     ) -> GameResult {
-        let x = (x - OFFSET) as i32 / TILE_SIZE;
-        let y = (y - OFFSET) as i32 / TILE_SIZE;
+        let x2 = (x - OFFSET) as i32 / TILE_SIZE;
+        let y2 = (y - OFFSET) as i32 / TILE_SIZE;
 
-        let idx = y as usize * 8 + x as usize;
+        let idx = y2 as usize * 8 + x2 as usize;
+
+        // GET PIECE AT MOUSE POSITION
+        let piece = self.board_str.chars().nth(idx);
+
+        // IF PIECE EXISTS
+        if let Some(piece) = piece {
+            if self.selected_piece.is_some()
+                && self.valid_moves[self.selected_piece.unwrap()].contains(&idx)
+            {
+                // IF PIECE IS SELECTED AND POSITION IS VALID, MOVE PIECE
+                move_piece(&mut self.board, self.selected_piece.unwrap(), idx);
+                self.selected_piece = None;
+            }
+        }
 
         self.dragging = false;
 
