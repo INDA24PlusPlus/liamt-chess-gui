@@ -116,7 +116,7 @@ impl Chess {
         )
         .unwrap();
 
-        const ARRAY_REPEAT_VALUE: Vec<usize> = Vec::new();
+        let valid_moves = generate_valid_moves(&mut board);
         Chess {
             status: Status::Active,
             piece_images: load_piece_images(ctx),
@@ -125,7 +125,7 @@ impl Chess {
             selected_piece: None,
             dragging: false,
             mouse_pos: (0.0, 0.0),
-            valid_moves: [ARRAY_REPEAT_VALUE; 64],
+            valid_moves,
             turn: Color::White,
             grid,
             reset_button_mesh,
@@ -146,7 +146,6 @@ impl EventHandler<ggez::GameError> for Chess {
             Color::Black
         };
         self.board_str = invert_boardstr((info[7..71]).to_string());
-        self.valid_moves = generate_valid_moves(&mut self.board);
 
         let is_over = is_over(&mut self.board);
 
@@ -230,13 +229,11 @@ impl EventHandler<ggez::GameError> for Chess {
                 canvas.draw(&text, graphics::DrawParam::new().dest(text_dest));
             }
 
-            if c == 'K' && in_check(&mut self.board, 4 + 8 * 7) {
-                let dest = Vec2::new(x + TILE_SIZE / 2.0, y + TILE_SIZE / 2.0);
-                canvas.draw(
-                    &self.check_circle_mesh,
-                    graphics::DrawParam::new().dest(dest),
-                );
-            } else if c == 'k' && in_check(&mut self.board, 4) {
+            let k1 = i % 8;
+            let k2 = 8 - i / 8 - 1;
+            let k = (k1 + k2 * 8) as i64;
+
+            if (c == 'K' || c == 'k') && in_check(&mut self.board, k) {
                 let dest = Vec2::new(x + TILE_SIZE / 2.0, y + TILE_SIZE / 2.0);
                 canvas.draw(
                     &self.check_circle_mesh,
@@ -314,6 +311,7 @@ impl EventHandler<ggez::GameError> for Chess {
             {
                 // IF PIECE IS SELECTED AND POSITION IS VALID, MOVE PIECE
                 move_piece(&mut self.board, self.selected_piece.unwrap(), idx);
+                self.valid_moves = generate_valid_moves(&mut self.board);
                 self.selected_piece = None;
             } else {
                 // ELSE UNSELECT PIECE
@@ -353,6 +351,7 @@ impl EventHandler<ggez::GameError> for Chess {
         {
             // IF PIECE IS SELECTED AND POSITION IS VALID, MOVE PIECE
             move_piece(&mut self.board, self.selected_piece.unwrap(), idx);
+            self.valid_moves = generate_valid_moves(&mut self.board);
             self.selected_piece = None;
         }
 
