@@ -5,15 +5,14 @@ use ggez::{glam::*, Context, ContextBuilder, GameResult};
 use std::path;
 use std::str::FromStr;
 
-const TILE_SIZE: i32 = 100;
-const OFFSET: f32 = 100.0;
+mod chess;
+use chess::*;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Color {
-    White,
-    Black,
-    None,
-}
+mod draw;
+use draw::*;
+
+const TILE_SIZE: f32 = 100.0;
+const OFFSET: f32 = 100.0;
 
 fn main() {
     let resource_dir = path::PathBuf::from("./resources");
@@ -32,103 +31,22 @@ fn main() {
     event::run(ctx, event_loop, chess);
 }
 
-fn load_piece_images(ctx: &Context) -> Vec<(String, graphics::Image)> {
-    let pieces = vec![
-        ("p", "/wP.png"),
-        ("r", "/wR.png"),
-        ("n", "/wN.png"),
-        ("b", "/wB.png"),
-        ("q", "/wQ.png"),
-        ("k", "/wK.png"),
-        ("P", "/bP.png"),
-        ("R", "/bR.png"),
-        ("N", "/bN.png"),
-        ("B", "/bB.png"),
-        ("Q", "/bQ.png"),
-        ("K", "/bK.png"),
-    ];
-
-    let mut piece_images = Vec::new();
-
-    for (piece, path) in pieces {
-        let img = graphics::Image::from_path(ctx, path).unwrap();
-        piece_images.push((String::from_str(piece).unwrap(), img));
-    }
-
-    piece_images
-}
-
-fn str_to_idx(s: &str) -> usize {
-    let s = s.to_lowercase();
-    let x = s.chars().next().unwrap() as usize - 'a' as usize;
-    let y = s.chars().nth(1).unwrap() as usize - '1' as usize;
-    (7 - y) * 8 + x
-}
-
-fn idx_to_str(idx: usize) -> String {
-    let x = idx % 8;
-    let y = 7 - idx / 8;
-    let x = (x as u8 + b'a') as char;
-    let y = (y as u8 + b'1') as char;
-    format!("{}{}", x, y)
-}
-
-fn generate_valid_moves(board: &mut Board) -> [Vec<usize>; 64] {
-    const ARRAY_REPEAT_VALUE: Vec<usize> = Vec::new();
-    let mut valid_moves = [ARRAY_REPEAT_VALUE; 64];
-
-    let moves = filtered_moves(board);
-
-    for m in moves.iter() {
-        let idx = str_to_idx(&m[0..2]);
-        valid_moves[idx].push(str_to_idx(&m[2..4]));
-    }
-
-    valid_moves
-}
-
-fn get_piece_color(piece: char) -> Color {
-    match piece {
-        'p' | 'r' | 'n' | 'b' | 'q' | 'k' => Color::White,
-        'P' | 'R' | 'N' | 'B' | 'Q' | 'K' => Color::Black,
-        _ => Color::None,
-    }
-}
-
-fn move_piece(board: &mut Board, from: usize, to: usize) {
-    let from = idx_to_str(from);
-    let to = idx_to_str(to);
-
-    let movi = format!("{}{}", from, to);
-
-    println!("Move: {}", movi);
-
-    make_move(board, movi);
-
-    println!("Str: {}", board.get_boardinfo())
-}
-
-fn invert_boardstr(boardstr: String) -> String {
-    //reverse every 8 characters
-    let mut new_boardstr = String::new();
-    for i in (0..64).rev().step_by(8) {
-        let row = &boardstr[i - 7..i + 1];
-        new_boardstr.push_str(row);
-    }
-    new_boardstr
-}
-
 struct Chess {
     piece_images: Vec<(String, graphics::Image)>,
-    grid: graphics::Mesh,
     board: Board,
     board_str: String,
-    reset_button_rect: graphics::Rect,
     selected_piece: Option<usize>,
     dragging: bool,
     mouse_pos: (f32, f32),
     valid_moves: [Vec<usize>; 64],
     turn: Color,
+    grid: graphics::Mesh,
+    reset_button_rect: graphics::Rect,
+    reset_button_mesh: graphics::Mesh,
+    piece_mesh: graphics::Mesh,
+    valid_circle_mesh: graphics::Mesh,
+    check_circle_mesh: graphics::Mesh,
+    status: Status,
 }
 
 impl Chess {
@@ -138,16 +56,15 @@ impl Chess {
             for col in 0..8 {
                 let tile_color = if (row + col) % 2 == 0 {
                     graphics::Color::from_rgb(255, 255, 255)
-                    //graphics::Color::from_rgb(237, 14, 118)
                 } else {
                     graphics::Color::from_rgb(0, 0, 0)
                 };
 
                 let rect = graphics::Rect::new(
-                    (col * TILE_SIZE) as f32,
-                    (row * TILE_SIZE) as f32,
-                    TILE_SIZE as f32,
-                    TILE_SIZE as f32,
+                    col as f32 * TILE_SIZE,
+                    row as f32 * TILE_SIZE,
+                    TILE_SIZE,
+                    TILE_SIZE,
                 );
                 mb.rectangle(graphics::DrawMode::fill(), rect, tile_color)
                     .expect("Failed to build grid tile");
@@ -161,13 +78,48 @@ impl Chess {
 
         let board_str = (board.get_boardinfo()[7..71]).to_string();
 
+        let piece_mesh = graphics::Mesh::new_rectangle(
+            ctx,
+            graphics::DrawMode::stroke(5.0),
+            graphics::Rect::new(0.0, 0.0, TILE_SIZE, TILE_SIZE),
+            graphics::Color::from_rgba(199, 38, 239, 255),
+        )
+        .unwrap();
+
+        let valid_circle_mesh = graphics::Mesh::new_circle(
+            ctx,
+            graphics::DrawMode::fill(),
+            Vec2::new(0.0, 0.0),
+            10.0,
+            0.1,
+            graphics::Color::from_rgba(199, 38, 239, 100),
+        )
+        .unwrap();
+
+        let check_circle_mesh = graphics::Mesh::new_circle(
+            ctx,
+            graphics::DrawMode::fill(),
+            Vec2::new(0.0, 0.0),
+            25.0,
+            0.1,
+            graphics::Color::from_rgba(255, 0, 0, 100),
+        )
+        .unwrap();
+
         let reset_button_rect = graphics::Rect::new(50.0, 25.0, 150.0, 30.0);
+
+        let reset_button_mesh = graphics::Mesh::new_rectangle(
+            ctx,
+            graphics::DrawMode::fill(),
+            reset_button_rect,
+            graphics::Color::from_rgba(255, 255, 255, 255),
+        )
+        .unwrap();
 
         const ARRAY_REPEAT_VALUE: Vec<usize> = Vec::new();
         Chess {
+            status: Status::Active,
             piece_images: load_piece_images(ctx),
-            grid,
-            reset_button_rect,
             board,
             board_str,
             selected_piece: None,
@@ -175,6 +127,12 @@ impl Chess {
             mouse_pos: (0.0, 0.0),
             valid_moves: [ARRAY_REPEAT_VALUE; 64],
             turn: Color::White,
+            grid,
+            reset_button_mesh,
+            reset_button_rect,
+            piece_mesh,
+            valid_circle_mesh,
+            check_circle_mesh,
         }
     }
 }
@@ -190,6 +148,17 @@ impl EventHandler<ggez::GameError> for Chess {
         self.board_str = invert_boardstr((info[7..71]).to_string());
         self.valid_moves = generate_valid_moves(&mut self.board);
 
+        let is_over = is_over(&mut self.board);
+
+        match is_over {
+            0 => (),
+            1 => self.status = Status::Checkmate,
+            2 => self.status = Status::Stalemate,
+            3 => self.status = Status::ThreefoldRepetition,
+            4 => self.status = Status::FiftyMoveRule,
+            _ => (),
+        }
+
         Ok(())
     }
 
@@ -204,30 +173,22 @@ impl EventHandler<ggez::GameError> for Chess {
         // LOOP THROUGH BOARD STRING AND DRAW PIECES
         for (i, c) in self.board_str.chars().enumerate() {
             // START CALCULATE POSITION
-            let x = (i % 8) as f32 * TILE_SIZE as f32 + OFFSET;
-            let y = (i / 8) as f32 * TILE_SIZE as f32 + OFFSET;
+            let x = (i % 8) as f32 * TILE_SIZE + OFFSET;
+            let y = (i / 8) as f32 * TILE_SIZE + OFFSET;
 
             let mut piece_dst = Vec2::new(x, y);
 
             // START HANDLE SELECTED PIECE
             if selected_piece_idx == i {
                 // DRAW SELECTION BORDER AROUND PIECE
-                canvas.draw(
-                    &graphics::Mesh::new_rectangle(
-                        ctx,
-                        graphics::DrawMode::stroke(5.0),
-                        graphics::Rect::new(x, y, TILE_SIZE as f32, TILE_SIZE as f32),
-                        graphics::Color::from_rgba(199, 38, 239, 255),
-                    )
-                    .unwrap(),
-                    graphics::DrawParam::new(),
-                );
+                let dest = Vec2::new(x, y);
+                canvas.draw(&self.piece_mesh, graphics::DrawParam::new().dest(dest));
 
                 // IF DRAGGING, MOVE PIECE TO MOUSE POSITION
                 if self.dragging {
                     piece_dst = Vec2::new(
-                        self.mouse_pos.0 - (TILE_SIZE as f32 / 2.0),
-                        self.mouse_pos.1 - (TILE_SIZE as f32 / 2.0),
+                        self.mouse_pos.0 - (TILE_SIZE / 2.0),
+                        self.mouse_pos.1 - (TILE_SIZE / 2.0),
                     );
                 }
             }
@@ -244,17 +205,10 @@ impl EventHandler<ggez::GameError> for Chess {
 
             // DRAW VALID MOVES CIRCLE
             if selected_piece_idx != 69 && self.valid_moves[selected_piece_idx].contains(&i) {
+                let dest = Vec2::new(x + TILE_SIZE / 2.0, y + TILE_SIZE / 2.0);
                 canvas.draw(
-                    &graphics::Mesh::new_circle(
-                        ctx,
-                        graphics::DrawMode::fill(),
-                        Vec2::new(x + TILE_SIZE as f32 / 2.0, y + TILE_SIZE as f32 / 2.0),
-                        10.0,
-                        0.1,
-                        graphics::Color::from_rgba(199, 38, 239, 100),
-                    )
-                    .unwrap(),
-                    graphics::DrawParam::new(),
+                    &self.valid_circle_mesh,
+                    graphics::DrawParam::new().dest(dest),
                 );
             }
 
@@ -262,8 +216,7 @@ impl EventHandler<ggez::GameError> for Chess {
             if i % 8 == 0 {
                 let mut text = graphics::Text::new(format!("{}", 8 - i / 8));
                 text.set_scale(graphics::PxScale::from(40.0));
-                let text_dest =
-                    Vec2::new(54.0, y + TILE_SIZE as f32 / 2.0 - (TILE_SIZE as f32 / 5.0));
+                let text_dest = Vec2::new(54.0, y + TILE_SIZE / 2.0 - (TILE_SIZE / 5.0));
 
                 canvas.draw(&text, graphics::DrawParam::new().dest(text_dest));
             }
@@ -272,41 +225,57 @@ impl EventHandler<ggez::GameError> for Chess {
             if i < 8 {
                 let mut text = graphics::Text::new(format!("{}", (65 + (i % 8)) as u8 as char));
                 text.set_scale(graphics::PxScale::from(40.0));
-                let text_dest =
-                    Vec2::new(x + TILE_SIZE as f32 / 2.0 - (TILE_SIZE as f32 / 8.0), 918.0);
+                let text_dest = Vec2::new(x + TILE_SIZE / 2.0 - (TILE_SIZE / 8.0), 918.0);
 
                 canvas.draw(&text, graphics::DrawParam::new().dest(text_dest));
             }
 
-            // DRAW TURN TEXT
-            let mut text = graphics::Text::new(format!("Turn: {:?}", self.turn));
-            text.set_scale(graphics::PxScale::from(40.0));
-            let text_dest = Vec2::new((TILE_SIZE as f32) * 4.0 - 15.0, 20.0);
-            canvas.draw(&text, graphics::DrawParam::new().dest(text_dest));
+            if c == 'K' && in_check(&mut self.board, 4 + 8 * 7) {
+                let dest = Vec2::new(x + TILE_SIZE / 2.0, y + TILE_SIZE / 2.0);
+                canvas.draw(
+                    &self.check_circle_mesh,
+                    graphics::DrawParam::new().dest(dest),
+                );
+            } else if c == 'k' && in_check(&mut self.board, 4) {
+                let dest = Vec2::new(x + TILE_SIZE / 2.0, y + TILE_SIZE / 2.0);
+                canvas.draw(
+                    &self.check_circle_mesh,
+                    graphics::DrawParam::new().dest(dest),
+                );
+            }
+        }
 
-            // DRAW RESET BUTTON
-            canvas.draw(
-                &graphics::Mesh::new_rectangle(
-                    ctx,
-                    graphics::DrawMode::fill(),
-                    self.reset_button_rect,
-                    graphics::Color::from_rgba(255, 255, 255, 255),
-                )
-                .unwrap(),
-                graphics::DrawParam::new(),
-            );
+        // DRAW TURN TEXT
+        let mut text = graphics::Text::new(format!("Turn: {:?}", self.turn));
+        text.set_scale(graphics::PxScale::from(40.0));
+        let text_dest = Vec2::new(TILE_SIZE * 4.0 - 15.0, 20.0);
+        canvas.draw(&text, graphics::DrawParam::new().dest(text_dest));
 
-            let mut reset_text = graphics::Text::new("Reset");
-            let reset_text_dest = Vec2::new(
-                self.reset_button_rect.x + 37.0,
-                self.reset_button_rect.y + 3.0,
-            );
-            reset_text.set_scale(graphics::PxScale::from(30.0));
+        // DRAW RESET BUTTON
+        canvas.draw(&self.reset_button_mesh, graphics::DrawParam::new());
+
+        let mut reset_text = graphics::Text::new("Reset");
+        let reset_text_dest = Vec2::new(
+            self.reset_button_rect.x + 37.0,
+            self.reset_button_rect.y + 3.0,
+        );
+        reset_text.set_scale(graphics::PxScale::from(30.0));
+        canvas.draw(
+            &reset_text,
+            graphics::DrawParam::new()
+                .dest(reset_text_dest)
+                .color(graphics::Color::BLACK),
+        );
+
+        if self.status != Status::Active {
+            let mut text = graphics::Text::new(format!("{:?}", self.status));
+            text.set_scale(graphics::PxScale::from(100.0));
+            let text_dest = Vec2::new(350.0, 450.0);
             canvas.draw(
-                &reset_text,
+                &text,
                 graphics::DrawParam::new()
-                    .dest(reset_text_dest)
-                    .color(graphics::Color::BLACK),
+                    .dest(text_dest)
+                    .color(graphics::Color::RED),
             );
         }
 
@@ -324,8 +293,8 @@ impl EventHandler<ggez::GameError> for Chess {
             return Ok(());
         }
 
-        let x2 = (x - OFFSET) as i32 / TILE_SIZE;
-        let y2 = (y - OFFSET) as i32 / TILE_SIZE;
+        let x2 = (x - OFFSET) as i32 / TILE_SIZE as i32;
+        let y2 = (y - OFFSET) as i32 / TILE_SIZE as i32;
         let idx = y2 as usize * 8 + x2 as usize;
 
         // GET PIECE AT MOUSE POSITION
@@ -356,6 +325,7 @@ impl EventHandler<ggez::GameError> for Chess {
             self.board = Board::new();
             self.board.init_board();
             self.selected_piece = None;
+            self.status = Status::Active;
         }
 
         Ok(())
@@ -372,8 +342,8 @@ impl EventHandler<ggez::GameError> for Chess {
             return Ok(());
         }
 
-        let x2 = (x - OFFSET) as i32 / TILE_SIZE;
-        let y2 = (y - OFFSET) as i32 / TILE_SIZE;
+        let x2 = (x - OFFSET) as i32 / TILE_SIZE as i32;
+        let y2 = (y - OFFSET) as i32 / TILE_SIZE as i32;
 
         let idx = y2 as usize * 8 + x2 as usize;
 
