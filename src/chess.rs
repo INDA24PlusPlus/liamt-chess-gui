@@ -57,13 +57,17 @@ pub fn move_piece(board: &mut Board, from: usize, to: usize) {
     let from = idx_to_str(from);
     let to = idx_to_str(to);
 
-    let movi = format!("{}{}", from, to);
+    let mut movi = format!("{}{}", from, to);
 
     println!("Move: {}", movi);
 
+    let before_turn = board.start;
     make_move(board, movi);
 
-    println!("Str: {}", board.get_boardinfo())
+    if before_turn == board.start {
+        let mut movi = format!("{}{}Q", from, to);
+        make_move(board, movi);
+    }
 }
 
 pub fn invert_boardstr(boardstr: String) -> String {

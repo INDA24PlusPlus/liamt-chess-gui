@@ -145,7 +145,7 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 [[package]]
 name = "arvidkr_chess"
 version = "0.1.0"
-source = "git+https://github.com/INDA24PlusPlus/arvidkr-chess#4c6571fdf6e340f4f38c7ee5f52b1d019fed0d3d"
+source = "git+https://github.com/INDA24PlusPlus/arvidkr-chess#01a3436068ccf587abb787a12933ba28af16526f"
 
 [[package]]
 name = "ash"
@@ -723,9 +723,9 @@ dependencies = [
 
 [[package]]
 name = "flate2"
-version = "1.0.33"
+version = "1.0.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "324a1be68054ef05ad64b861cc9eaf1d623d2d8cb25b4bf2cb9cdd902b4bf253"
+checksum = "a1b589b4dc103969ad3cf85c950899926ec64300a1a46d76c03a6072957036f0"
 dependencies = [
  "crc32fast",
  "miniz_oxide 0.8.0",
