@@ -21,21 +21,10 @@ const TILE_SIZE: f32 = 100.0;
 const OFFSET: f32 = 100.0;
 
 fn main() {
-    let resource_dir = path::PathBuf::from("./resources");
-
-    let mode = ggez::conf::WindowMode::default().dimensions(1000.0, 1000.0);
-
-    let (mut ctx, event_loop) = ContextBuilder::new("chess", "Laim")
-        .add_resource_path(resource_dir)
-        .window_mode(mode)
-        .window_setup(ggez::conf::WindowSetup::default().title("ULTIMEATE CHESS GAME!!?1"))
-        .build()
-        .expect("gg, could not create ggez context :(");
-
     let args: Vec<String> = env::args().collect();
 
     if args.len() != 3 {
-        println!("Usage: cargo run <addr> <client/server>");
+        println!("Usage: cargo run <addr> <role: \"client\" | \"server\">");
         std::process::exit(1);
     }
 
@@ -49,17 +38,33 @@ fn main() {
             end_state: None,
         };
         let test_serialized: Vec<u8> = test.try_into().unwrap();
-        client.send(test_serialized);
+        loop {
+            client.send(test_serialized.clone());
+            std::thread::sleep(Duration::from_secs(1));
+        }
     } else if role == "server" {
         let mut server = Server::new(addr);
         loop {
-            server.receive();
+            let data = server.receive();
+            let ack: net::Ack = data.try_into()
+            println!("{:?}", data);
             std::thread::sleep(Duration::from_secs(1));
         }
     } else {
         println!("Invalid role, must be client or server");
         std::process::exit(1);
     }
+
+    let resource_dir = path::PathBuf::from("./resources");
+
+    let mode = ggez::conf::WindowMode::default().dimensions(1000.0, 1000.0);
+
+    let (mut ctx, event_loop) = ContextBuilder::new("chess", "Laim")
+        .add_resource_path(resource_dir)
+        .window_mode(mode)
+        .window_setup(ggez::conf::WindowSetup::default().title("ULTIMEATE CHESS GAME!!?1"))
+        .build()
+        .expect("gg, could not create ggez context :(");
 
     let chess = Chess::new(&mut ctx);
 

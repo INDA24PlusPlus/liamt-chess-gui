@@ -10,7 +10,6 @@ impl Server {
     pub fn new(addr: &str) -> Self {
         let listener = TcpListener::bind(addr).expect("Could not bind to address");
 
-        // accept connections and process them serially
         let (stream, _addr) = listener.accept().expect("Could not accept connection");
 
         stream
@@ -21,15 +20,16 @@ impl Server {
     }
 
     pub fn receive(&mut self) -> Vec<u8> {
-        let mut data = Vec::new();
-        let _ = self
-            .stream
-            .read(&mut data)
-            .expect("Could not read into buffer");
+        let mut data = [0u8; 1024];
+        let res = self.stream.read(&mut data);
 
-        println!("Recieved: {}", data.len());
-
-        data
+        match res {
+            Ok(size) => data[..size].to_vec(),
+            Err(err) => {
+                println!("Error: {:?}", err);
+                Vec::new()
+            }
+        }
     }
 
     pub fn send(&mut self, data: Vec<u8>) {
@@ -55,15 +55,16 @@ impl Client {
     }
 
     pub fn receive(&mut self) -> Vec<u8> {
-        let mut data = Vec::new();
-        let _ = self
-            .stream
-            .read(&mut data)
-            .expect("Could not read into buffer");
+        let mut data = [0u8; 1024];
+        let res = self.stream.read(&mut data);
 
-        println!("Recieved: {}", data.len());
-
-        data
+        match res {
+            Ok(size) => data[..size].to_vec(),
+            Err(err) => {
+                println!("Error: {:?}", err);
+                Vec::new()
+            }
+        }
     }
 
     pub fn send(&mut self, data: Vec<u8>) {
