@@ -1,15 +1,21 @@
 use arvidkr_chess::*;
+use chess_networking as net;
 use ggez::event::{self, EventHandler, MouseButton};
 use ggez::graphics::{self};
 use ggez::{glam::*, Context, ContextBuilder, GameResult};
+use std::env;
 use std::path;
 use std::str::FromStr;
+use std::time::Duration;
 
 mod chess;
 use chess::*;
 
 mod draw;
 use draw::*;
+
+mod network;
+use network::*;
 
 const TILE_SIZE: f32 = 100.0;
 const OFFSET: f32 = 100.0;
@@ -25,6 +31,35 @@ fn main() {
         .window_setup(ggez::conf::WindowSetup::default().title("ULTIMEATE CHESS GAME!!?1"))
         .build()
         .expect("gg, could not create ggez context :(");
+
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() != 3 {
+        println!("Usage: cargo run <addr> <client/server>");
+        std::process::exit(1);
+    }
+
+    let addr = &args[1];
+    let role = &args[2];
+
+    if role == "client" {
+        let mut client = Client::new(addr);
+        let test = net::Ack {
+            ok: true,
+            end_state: None,
+        };
+        let test_serialized: Vec<u8> = test.try_into().unwrap();
+        client.send(test_serialized);
+    } else if role == "server" {
+        let mut server = Server::new(addr);
+        loop {
+            server.receive();
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    } else {
+        println!("Invalid role, must be client or server");
+        std::process::exit(1);
+    }
 
     let chess = Chess::new(&mut ctx);
 
@@ -249,7 +284,8 @@ impl EventHandler<ggez::GameError> for Chess {
         // DRAW TURN TEXT
         let mut text = graphics::Text::new(format!("Turn: {:?}", self.turn));
         text.set_scale(graphics::PxScale::from(40.0));
-        let text_dest = Vec2::new(TILE_SIZE * 4.0 - 15.0, 20.0);
+        text.set_layout(graphics::TextLayout::center());
+        let text_dest = Vec2::new(500.0, 50.0);
         canvas.draw(&text, graphics::DrawParam::new().dest(text_dest));
 
         // DRAW RESET BUTTON
@@ -272,7 +308,8 @@ impl EventHandler<ggez::GameError> for Chess {
         if self.status != Status::Active {
             let mut text = graphics::Text::new(format!("{:?}", self.status));
             text.set_scale(graphics::PxScale::from(100.0));
-            let text_dest = Vec2::new(300.0, 450.0);
+            text.set_layout(graphics::TextLayout::center());
+            let text_dest = Vec2::new(500.0, 500.0);
             canvas.draw(
                 &text,
                 graphics::DrawParam::new()

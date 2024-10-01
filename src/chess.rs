@@ -57,7 +57,7 @@ pub fn move_piece(board: &mut Board, from: usize, to: usize) {
     let from = idx_to_str(from);
     let to = idx_to_str(to);
 
-    let mut movi = format!("{}{}", from, to);
+    let movi = format!("{}{}", from, to);
 
     println!("Move: {}", movi);
 
@@ -65,7 +65,7 @@ pub fn move_piece(board: &mut Board, from: usize, to: usize) {
     make_move(board, movi);
 
     if before_turn == board.start {
-        let mut movi = format!("{}{}Q", from, to);
+        let movi = format!("{}{}Q", from, to);
         make_move(board, movi);
     }
 }

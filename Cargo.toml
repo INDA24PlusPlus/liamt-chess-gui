@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 arvidkr_chess = { git = "https://github.com/INDA24PlusPlus/arvidkr-chess" }
+chess-networking = { git = "https://github.com/INDA24PlusPlus/chess-networking" }
 ggez = "0.9.3"
