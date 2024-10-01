@@ -46,8 +46,8 @@ fn main() {
         let mut server = Server::new(addr);
         loop {
             let data = server.receive();
-            let ack: net::Ack = data.try_into()
-            println!("{:?}", data);
+            let ack: net::Ack = (&data as &[u8]).try_into().unwrap();
+            println!("{:?}", ack);
             std::thread::sleep(Duration::from_secs(1));
         }
     } else {
