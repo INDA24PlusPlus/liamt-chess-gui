@@ -20,6 +20,12 @@ use network::*;
 const TILE_SIZE: f32 = 100.0;
 const OFFSET: f32 = 100.0;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ConnectionType {
+    Server,
+    Client,
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -31,29 +37,38 @@ fn main() {
     let addr = &args[1];
     let role = &args[2];
 
-    if role == "client" {
-        let mut client = Client::new(addr);
+    let role = match role as &str {
+        "client" => ConnectionType::Client,
+        "server" => ConnectionType::Server,
+        _ => {
+            println!("Invalid role, must be client or server");
+            std::process::exit(1);
+        }
+    };
+
+    /* if role == "client" {
+        let mut client = Network::new_client(addr);
         let test = net::Ack {
             ok: true,
             end_state: None,
         };
-        let test_serialized: Vec<u8> = test.try_into().unwrap();
         loop {
-            client.send(test_serialized.clone());
+            client.send(test.clone());
+            println!("Sent: {:?}", test);
             std::thread::sleep(Duration::from_secs(1));
         }
     } else if role == "server" {
-        let mut server = Server::new(addr);
+        let mut server = Network::new_server(addr);
         loop {
-            let data = server.receive();
-            let ack: net::Ack = (&data as &[u8]).try_into().unwrap();
-            println!("{:?}", ack);
+            let data: Option<net::Ack> = server.receive();
+
+            println!("{:?}", data);
             std::thread::sleep(Duration::from_secs(1));
         }
     } else {
         println!("Invalid role, must be client or server");
         std::process::exit(1);
-    }
+    } */
 
     let resource_dir = path::PathBuf::from("./resources");
 
@@ -66,7 +81,7 @@ fn main() {
         .build()
         .expect("gg, could not create ggez context :(");
 
-    let chess = Chess::new(&mut ctx);
+    let chess = Chess::new(&mut ctx, addr, role);
 
     event::run(ctx, event_loop, chess);
 }
@@ -80,6 +95,7 @@ struct Chess {
     mouse_pos: (f32, f32),
     valid_moves: [Vec<usize>; 64],
     turn: Color,
+    my_color: Color,
     grid: graphics::Mesh,
     reset_button_rect: graphics::Rect,
     reset_button_mesh: graphics::Mesh,
@@ -87,10 +103,23 @@ struct Chess {
     valid_circle_mesh: graphics::Mesh,
     check_circle_mesh: graphics::Mesh,
     status: Status,
+    conn: Connection,
+}
+
+fn pos_int_to_tuple(idx: usize) -> (u8, u8) {
+    let x = idx % 8;
+    let y = 7 - idx / 8;
+    (x as u8, y as u8)
+}
+
+fn pos_tuple_to_int(pos: (u8, u8)) -> usize {
+    let x = pos.0;
+    let y = pos.1;
+    (7 - y) as usize * 8 + x as usize
 }
 
 impl Chess {
-    pub fn new(ctx: &mut Context) -> Chess {
+    pub fn new(ctx: &mut Context, addr: &str, role: ConnectionType) -> Chess {
         let mb = &mut graphics::MeshBuilder::new();
         for row in 0..8 {
             for col in 0..8 {
@@ -113,8 +142,51 @@ impl Chess {
 
         let grid = graphics::Mesh::from_data(ctx, mb.build());
 
+        let mut conn = match role {
+            ConnectionType::Server => Connection::new_server(addr),
+            ConnectionType::Client => Connection::new_client(addr),
+        };
+
         let mut board = Board::new();
         board.init_board();
+
+        let mut my_color = Color::White;
+
+        if role == ConnectionType::Client {
+            let start = net::Start {
+                is_white: true,
+                name: Some("The weather outside is rizzy".to_string()),
+                fen: None,
+                time: None,
+                inc: None,
+            };
+            conn.send(start);
+
+            let ret_start = conn.receive_skibidi::<net::Start>();
+
+            if ret_start.is_white {
+                my_color = Color::Black;
+            }
+
+            println!("{:?}", ret_start);
+        } else {
+            let start = conn.receive_skibidi::<net::Start>();
+
+            println!("{:?}", start);
+
+            let ret_start = net::Start {
+                is_white: !start.is_white,
+                name: Some("But the fire is so skibidi".to_string()),
+                fen: None,
+                time: None,
+                inc: None,
+            };
+            conn.send(ret_start);
+
+            if start.is_white {
+                my_color = Color::Black;
+            }
+        }
 
         let board_str = invert_boardstr(board.get_boardinfo()[7..71].to_string());
 
@@ -160,19 +232,21 @@ impl Chess {
         Chess {
             status: Status::Active,
             piece_images: load_piece_images(ctx),
+            turn: Color::White,
+            my_color,
             board,
             board_str,
             selected_piece: None,
             dragging: false,
             mouse_pos: (0.0, 0.0),
             valid_moves,
-            turn: Color::White,
             grid,
             reset_button_mesh,
             reset_button_rect,
             piece_mesh,
             valid_circle_mesh,
             check_circle_mesh,
+            conn,
         }
     }
 
@@ -198,10 +272,60 @@ impl Chess {
             _ => (),
         }
     }
+
+    fn move_myself(&mut self, idx: usize) {
+        let mv = net::Move {
+            from: pos_int_to_tuple(self.selected_piece.unwrap()),
+            to: pos_int_to_tuple(idx),
+            offer_draw: false,
+            promotion: None,
+            forfeit: false,
+        };
+
+        self.conn.send(mv);
+
+        let ack = self.conn.receive_skibidi::<net::Ack>();
+
+        if ack.ok {
+            move_piece(&mut self.board, self.selected_piece.unwrap(), idx);
+            self.update_board();
+        } else {
+            println!("Invalid move");
+        }
+    }
+
+    fn move_opp(&mut self, from: (u8, u8), to: (u8, u8)) {
+        move_piece(
+            &mut self.board,
+            pos_tuple_to_int(from),
+            pos_tuple_to_int(to),
+        );
+        self.update_board();
+    }
 }
 
 impl EventHandler<ggez::GameError> for Chess {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
+        if self.my_color != self.turn {
+            let m: Option<net::Move> = self.conn.receive();
+
+            if m.is_none() {
+                return Ok(());
+            }
+
+            let m = m.unwrap();
+
+            println!("Received move: {:?}", m);
+
+            self.move_opp(m.from, m.to);
+            self.update_board();
+
+            self.conn.send(net::Ack {
+                ok: true,
+                end_state: None,
+            });
+        }
+
         Ok(())
     }
 
@@ -287,7 +411,10 @@ impl EventHandler<ggez::GameError> for Chess {
         }
 
         // DRAW TURN TEXT
-        let mut text = graphics::Text::new(format!("Turn: {:?}", self.turn));
+        let mut text = graphics::Text::new(format!(
+            "Turn: {:?}. You are: {:?}",
+            self.turn, self.my_color
+        ));
         text.set_scale(graphics::PxScale::from(40.0));
         text.set_layout(graphics::TextLayout::center());
         let text_dest = Vec2::new(500.0, 50.0);
@@ -349,7 +476,7 @@ impl EventHandler<ggez::GameError> for Chess {
             let color = get_piece_color(piece);
 
             // IF PIECE IS SAME COLOR AS TURN, SELECT PIECE
-            if color == self.turn {
+            if color == self.turn && color == self.my_color {
                 self.selected_piece = Some(idx);
                 self.dragging = true;
                 self.mouse_pos = (x, y);
@@ -357,8 +484,7 @@ impl EventHandler<ggez::GameError> for Chess {
                 && self.valid_moves[self.selected_piece.unwrap()].contains(&idx)
             {
                 // IF PIECE IS SELECTED AND POSITION IS VALID, MOVE PIECE
-                move_piece(&mut self.board, self.selected_piece.unwrap(), idx);
-                self.update_board();
+                self.move_myself(idx);
                 self.selected_piece = None;
             } else {
                 // ELSE UNSELECT PIECE
@@ -398,8 +524,7 @@ impl EventHandler<ggez::GameError> for Chess {
             && self.valid_moves[self.selected_piece.unwrap()].contains(&idx)
         {
             // IF PIECE IS SELECTED AND POSITION IS VALID, MOVE PIECE
-            move_piece(&mut self.board, self.selected_piece.unwrap(), idx);
-            self.update_board();
+            self.move_myself(idx);
             self.selected_piece = None;
         }
 
