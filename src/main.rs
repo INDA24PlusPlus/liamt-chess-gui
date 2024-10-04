@@ -46,30 +46,6 @@ fn main() {
         }
     };
 
-    /* if role == "client" {
-        let mut client = Network::new_client(addr);
-        let test = net::Ack {
-            ok: true,
-            end_state: None,
-        };
-        loop {
-            client.send(test.clone());
-            println!("Sent: {:?}", test);
-            std::thread::sleep(Duration::from_secs(1));
-        }
-    } else if role == "server" {
-        let mut server = Network::new_server(addr);
-        loop {
-            let data: Option<net::Ack> = server.receive();
-
-            println!("{:?}", data);
-            std::thread::sleep(Duration::from_secs(1));
-        }
-    } else {
-        println!("Invalid role, must be client or server");
-        std::process::exit(1);
-    } */
-
     let resource_dir = path::PathBuf::from("./resources");
 
     let mode = ggez::conf::WindowMode::default().dimensions(1000.0, 1000.0);
@@ -146,6 +122,7 @@ impl Chess {
             ConnectionType::Server => Connection::new_server(addr),
             ConnectionType::Client => Connection::new_client(addr),
         };
+        std::thread::sleep(Duration::from_secs(1));
 
         let mut board = Board::new();
         board.init_board();
@@ -317,13 +294,23 @@ impl EventHandler<ggez::GameError> for Chess {
 
             println!("Received move: {:?}", m);
 
+            let turn_before = self.turn.clone();
+
             self.move_opp(m.from, m.to);
             self.update_board();
 
-            self.conn.send(net::Ack {
-                ok: true,
-                end_state: None,
-            });
+            if turn_before == self.turn {
+                // Invalid move
+                self.conn.send(net::Ack {
+                    ok: false,
+                    end_state: None,
+                });
+            } else {
+                self.conn.send(net::Ack {
+                    ok: true,
+                    end_state: None,
+                });
+            }
         }
 
         Ok(())
@@ -423,7 +410,7 @@ impl EventHandler<ggez::GameError> for Chess {
         // DRAW RESET BUTTON
         canvas.draw(&self.reset_button_mesh, graphics::DrawParam::new());
 
-        let mut reset_text = graphics::Text::new("Reset");
+        let mut reset_text = graphics::Text::new("Forfeit");
         let reset_text_dest = Vec2::new(
             self.reset_button_rect.x + 37.0,
             self.reset_button_rect.y + 3.0,

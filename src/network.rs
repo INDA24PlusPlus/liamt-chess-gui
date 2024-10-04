@@ -79,7 +79,28 @@ impl Connection {
     where
         for<'a> T: TryFrom<&'a [u8]>,
     {
-        let data = self._receive();
+        let mut data = self._receive();
+
+        if data.len() != 0 {
+            println!("Received: {:?}", data);
+        }
+
+        let mut d = Vec::new();
+
+        if data.len() == 1 {
+            loop {
+                std::thread::sleep(Duration::from_millis(10));
+                d = self._receive();
+
+                if d.len() != 0 {
+                    println!("Received: {:?}", d);
+                    break;
+                }
+            }
+        }
+
+        data.extend(d);
+
         let result = T::try_from(&data as &[u8]);
 
         match result {
